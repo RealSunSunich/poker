@@ -48,7 +48,6 @@ public class Main extends Application{
 				return iter.next();
 			}
 		}
-
 		
 	}
 	
