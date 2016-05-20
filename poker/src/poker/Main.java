@@ -47,8 +47,8 @@ public class Main extends Application{
 				iter=list.iterator();
 				return iter.next();
 			}
-		}
-		
+			
+		}	
 		
 		
 	}
