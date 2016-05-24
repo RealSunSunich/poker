@@ -15,6 +15,8 @@ import com.beust.jcommander.Parameter;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
+import javafx.event.ActionEvent;
+import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.Scene;
@@ -28,10 +30,49 @@ import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
 class Player{
+	@Override
+	public String toString() {
+		return "Player [flop=" + flop + ", ip=" + ip + ", num=" + num + ", cards=" + Arrays.toString(cards)
+				+ ", counter=" + counter + ", ready=" + ready + "]";
+	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + ((ip == null) ? 0 : ip.hashCode());
+		result = prime * result + num;
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		Player other = (Player) obj;
+		if (ip == null) {
+			if (other.ip != null)
+				return false;
+		} else if (!ip.equals(other.ip))
+			return false;
+		if (num != other.num)
+			return false;
+		return true;
+	}
+
+	
+
+	public ArrayList<Integer> flop = new ArrayList<>(5);
 	public String ip;
 	public int num;
 	int[] cards=new int[2];
 	int counter=0;
+	private boolean ready;
+	
 
 	public Player(String ip, int num) {
 		this.ip = ip;
@@ -48,12 +89,65 @@ class Player{
 		this.counter++;
 		
 	}
+
+	public void setReady(boolean b) {
+		this.ready= b;
+		
+	}
+	
+	boolean isReady(){
+		return this.ready;
+	}
+	
+}
+
+enum Op{
+	Ready(0),
+	Check(1),
+	Pass(2),
+	Raise(3);
+	int op;
+	
+	Op(int op){
+		this.op=op;
+	}
 }
 
 
 public class Main extends Application{
 	
 		
+	private final class CheckEvent implements EventHandler<ActionEvent> {
+		
+private SocketChannel client;
+private Op op;
+
+public CheckEvent(SocketChannel client, Op op) {
+	this.client = client;
+	this.op = op;
+	
+		}
+
+//		public CheckEvent(ServerChannel serv) {
+//			// TODO Auto-generated constructor stub
+//		}
+		@Override
+		public void handle(ActionEvent event) {
+			ByteBuffer buffer = ByteBuffer.allocate(72);
+			buffer.putInt(op.op);
+			buffer.flip();
+			try {
+				client.write(buffer);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
+			
+		}
+	}
+
+
 	static class Options{
 		@Parameter(names = "-server", description = "Default - server mode, false if client", arity = 1)
 		static boolean type = true;	
@@ -98,15 +192,16 @@ public class Main extends Application{
 
 	}
 
-	private static int counter;
+	private static volatile int counter;
 	private static FlowPane pane;
 	private static Scene ms;
-	private static volatile GraphicsContext gc;
-	private static volatile Stage primaryStage;
-	private static Image img;
+	private GraphicsContext gc;
+	private static Stage primaryStage;
+	private Image img;
+	private static ArrayList<Integer> flop= new ArrayList<>(5);
 	private static int[] cardsIdxs = new int[52];
 	private static List<Player> players;
-	private static int cardHead;;
+	private static volatile int cardHead;;
 
 	private static void swap(int[] array, int i, int j) {
         int temp = array[i];
@@ -153,12 +248,13 @@ public class Main extends Application{
 		Canvas cnvs = new Canvas(800,600);
 		gc = cnvs.getGraphicsContext2D();
 		Button check = new Button("Check");
+		Button ready = new Button("Ready");
 		Button call = new Button("Call");
 		Button raise = new Button("Raise");
 		VBox vbox = new VBox();
 	    vbox.setPadding(new Insets(10));
 	    vbox.setSpacing(8);
-	    vbox.getChildren().addAll(check, call, raise);
+	    vbox.getChildren().addAll(check, call, raise, ready);
 		pane.getChildren().add(cnvs);
 		pane.getChildren().addAll(vbox);
 		
@@ -171,69 +267,104 @@ public class Main extends Application{
 		
 		if(Options.type){
 			//Create Server
-			
+
 			Runnable r = new Runnable() {
-				
-				
+
+
 
 				@Override
 				public void run() {
 					Main.createServer();	
-//					return null;
+					//					return null;
 				}
 
 			};
-			
+
 			Thread thread = new Thread(r, "Poker Server");
 			thread.start();
-			
+
+
 		}
-		else{
-			//create Client 
-			
-			
-			try {
-				SocketAddress address = new InetSocketAddress("127.0.0.1", 777);
-				SocketChannel client = SocketChannel.open(address);
-				ByteBuffer buffer = ByteBuffer.allocate(72);
-				WritableByteChannel out = Channels.newChannel(System.out);
-				int me=-1;
-				while (client.read(buffer) != -1) {
-					System.out.println(new String(buffer.array()));
-					
-					buffer.flip();
-					if(me==-1){
-//						String string = new String(buffer.array());
-//						System.out.println(string);
-//						me=Integer.valueOf(string.substring(string.lastIndexOf(" ")+1).trim());
-						
-						me=buffer.getInt();
-						System.out.println("I am number " + me);
+
+		//create Client 
+
+
+		try {
+			SocketAddress address = new InetSocketAddress("127.0.0.1", 777);
+			SocketChannel client = SocketChannel.open(address);
+
+			ready.setOnAction(new CheckEvent(client, Op.Ready));
+			check.setOnAction(new CheckEvent(client, Op.Check));
+			raise.setOnAction(new CheckEvent(client, Op.Raise));
+			call.setOnAction(new CheckEvent(client, Op.Check));
+
+			Runnable cli = new Runnable() {
+
+				@Override
+				public void run() {
+
+					try {
+						ByteBuffer buffer = ByteBuffer.allocate(72);
+						WritableByteChannel out = Channels.newChannel(System.out);
+						int me = -1;
+						while (client.read(buffer) != -1) {
+							System.out.println("Buffer position: " + buffer.position());
+
+							buffer.flip();
+							if (me == -1) {
+								// String string = new String(buffer.array());
+								// System.out.println(string);
+								// me=Integer.valueOf(string.substring(string.lastIndexOf("
+								// ")+1).trim());
+
+								me = buffer.getInt();
+								System.out.println("I am number " + me);
+								// System.out.println("Next int " +
+								// buffer.getInt());
+							}
+
+							if (buffer.remaining() == 8) {
+								Platform.runLater(()->{
+									drawCards(img, gc, buffer.getInt(), 0);
+									drawCards(img, gc, buffer.getInt(), 0);
+									primaryStage.show();});
+								// counter++;
+								
+//								break;
+							}
+
+							if (buffer.remaining() == 20) {
+								counter = 0;
+								Platform.runLater(() -> {
+									drawFlop(img, gc, buffer.getInt());
+									drawFlop(img, gc, buffer.getInt());
+									drawFlop(img, gc, buffer.getInt());
+									primaryStage.show();
+								});
+							}
+							
+							out.write(buffer);
+							buffer.clear();
+
+						}
+					} catch (IOException e) {
+						e.printStackTrace();
 					}
-					else{
-						drawCards(img, gc, buffer.getInt(), 0);
-						drawCards(img, gc, buffer.getInt(), 0);
-//						counter++;
-						primaryStage.show();
-						break;
-					}
-					
-					
-					out.write(buffer);
-					buffer.clear();
-					
-					
-					
+
 				}
-				
-				
-				
-			} catch (IOException ex) {
-				ex.printStackTrace();
-			}
-			
-			
+			};
+
+			Thread cliT = new Thread(cli, "Client Thread");
+
+			cliT.start();
+
+
+		} catch (IOException ex) {
+			ex.printStackTrace();
 		}
+			
+			
+
 		
 		
 		
@@ -256,6 +387,25 @@ public class Main extends Application{
 		
 	}
 	
+	private void drawFlop(Image img2, GraphicsContext gc2, int nextInt) {
+		
+		if(nextInt<13){
+			drawCard(img, gc,0, nextInt, 1);
+		}
+		else if(nextInt<26){
+			drawCard(img, gc,1, nextInt-13, 1);
+		}
+		else if(nextInt<39){
+
+			drawCard(img, gc,2, nextInt-26, 1);
+		}
+		else{
+			drawCard(img, gc,3, nextInt-39, 1);
+		}
+		counter++;
+	}
+
+
 	static void createServer(){
 		ServerSocketChannel serverChannel;
 		Selector selector;
@@ -272,15 +422,13 @@ public class Main extends Application{
 		}
 		cardHead = 0;
 		
-		Platform.runLater(()->{
-			drawCards(img, gc, cardsIdxs[cardHead++], 0);
-			drawCards(img, gc, cardsIdxs[cardHead++], 0);
-			primaryStage.show();
-			
-		});
 		
+		Integer playerNum=0;
 		boolean done= true;
 		while(done){
+			
+			
+			
 			try {
 				selector.select();
 			} catch (IOException ex) {
@@ -289,16 +437,22 @@ public class Main extends Application{
 			}
 
 			Set<SelectionKey> readyKeys = selector.selectedKeys();
+			
+			
+			
 			Iterator<SelectionKey> iterator = readyKeys.iterator();
-			Integer playerNum=0;
 			
 			while (iterator.hasNext()) {
 				
 				SelectionKey key = iterator.next();
+				
+				System.out.println("Key Readable: "+key.isReadable()+" Key Writable: "+key.isWritable() +" Key "+ key.attachment());
+				
 				iterator.remove();
 				try {
+					
+					
 					if (key.isAcceptable()) {
-						playerNum++;
 						
 													
 						ServerSocketChannel server = (ServerSocketChannel) key.channel();
@@ -308,40 +462,103 @@ public class Main extends Application{
 						
 
 						
-						System.out.println("Accepted connection from " + client);
+						System.out.println("Accepted connection from " + client+" Player number:"+playerNum );
 						client.configureBlocking(false);
 						SelectionKey key2 = client.register(selector, SelectionKey.OP_WRITE);
 						
 						key2.attach(e);
 						
+						playerNum++;
 						
 						
-					} else if (key.isWritable()&& ((Player)key.attachment()).counter==0) {
+					} else if (key.isWritable()){//&& ((Player)key.attachment()).counter==0) {
 						SocketChannel client = (SocketChannel) key.channel();
 						ByteBuffer buffer = ByteBuffer.allocate(72);
 						
 						Player e = (Player)key.attachment();
 						
-						if(!players.contains(e)){
+						if(e!=null&& !players.contains(e)){
+							System.out.println("Draw cards to " + e);
+							e.giveCards(cardsIdxs[cardHead++]);
+							e.giveCards(cardsIdxs[cardHead++]);
 							players.add(e);
 							buffer.putInt(e.num);
 							buffer.flip();
 							client.write(buffer);
 							buffer.clear();
+							buffer.putInt(e.cards[0]);
+							buffer.putInt(e.cards[1]);
+							
+							buffer.flip();
+							client.write(buffer);
+							
+							client.register(selector, SelectionKey.OP_READ).attach(e);
 						}
 						
-						e.giveCards(cardsIdxs[cardHead++]);
-						e.giveCards(cardsIdxs[cardHead++]);
+						System.out.println("Is Players Ready: "+players.stream().allMatch(i ->{ System.out.println(i);return i.isReady();}));
+						System.out.println("Is flop drawn: "+e.flop);
 						
-						buffer.putInt(e.cards[0]);
-						buffer.putInt(e.cards[1]);
-						
-						buffer.flip();
-						client.write(buffer);
+						if(players.stream().allMatch(i->i.isReady())&& e.flop.size()!=flop.size()){
+							buffer.clear();
+							flop.stream().forEach(i->{buffer.putInt(i.intValue()); System.out.println("Flop to "+e+" now drawing: "+i.intValue());});
+							
+							WritableByteChannel out = Channels.newChannel(System.out);
+							buffer.flip();
+							out.write(buffer);
+							
+							buffer.flip();
+							
+							
+							client.write(buffer);
+							
+							players.remove(e);
+							players.add(e);
+							
+							client.register(selector, SelectionKey.OP_READ).attach(e);
+						}
 						
 						
 						
 //						done = false;
+						
+					}
+					if(key.isReadable()){
+						SocketChannel client = (SocketChannel) key.channel();
+						ByteBuffer buffer = ByteBuffer.allocate(72);
+						
+						
+						if(client.read(buffer)!=-1){
+							buffer.flip();
+							System.out.println("Client sent buffer with remaining "+buffer.remaining());
+							
+							int int1 = buffer.getInt();
+							Player e = (Player) key.attachment();
+							System.out.println("Client "
+							+e+" sent "
+									+int1);
+							
+							if(int1==Op.Ready.op){
+								int indexOf = players.indexOf(e);
+								e.setReady(true);
+								players.set(indexOf, e);
+								
+								if(players.stream().allMatch(i->i.isReady())&& flop.isEmpty()){
+									
+									flop.add(cardsIdxs[cardHead++]);
+									flop.add(cardsIdxs[cardHead++]);
+									flop.add(cardsIdxs[cardHead++]);
+									
+									System.out.println(flop);
+									System.out.println(players);
+									
+									
+									
+								}
+								
+								client.register(selector, SelectionKey.OP_WRITE).attach(e);
+								
+							}
+						}
 						
 					}
 				} catch (IOException ex) {
@@ -383,15 +600,18 @@ public class Main extends Application{
 			gc.drawImage(img, 
 				120*column, (nextInt)*180, 120, 180
 				, 215+40*counter, 300, 120,180);
+			
 		if (player==1)
 			gc.drawImage(img, 
 					120*column, (nextInt)*180, 120, 180
 					, 0+40*counter, 0, 120,180);
+			
 		
 		if (player==2)
 			gc.drawImage(img, 
 					120*column, (nextInt)*180, 120, 180
 					, 400+40*counter, 0, 120,180);
+			
 
 		
 	}
