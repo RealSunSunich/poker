@@ -1,6 +1,5 @@
 package poker;
 
-import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileInputStream;
 import java.util.ArrayList;
@@ -9,15 +8,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 
-import javax.imageio.ImageIO;
-
 import javafx.application.Application;
-import javafx.embed.swing.SwingFXUtils;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.Image;
-import javafx.scene.image.WritableImage;
 import javafx.scene.layout.StackPane;
 import javafx.stage.Stage;
 
@@ -126,7 +121,7 @@ public class Main extends Application{
 		
 		CycleIterator<Integer> player = new CycleIterator<>(players);
 		
-		for(int i=0; i<=5; i++){
+		for(int i=0; i<=(2*players.size()-1); i++){
 			int nextInt = cardsIdx[i];
 			drawCards(img, gc, nextInt, player.next());
 			
