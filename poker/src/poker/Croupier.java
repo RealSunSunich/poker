@@ -17,8 +17,7 @@ public class Croupier {
 			array[i]=new Card(cards[i-onTable.length]);		
 		qs(0,array.length-1);
 		int result=0;		
-	}
-	
+	}	
 	public static int[][] checkPairs(){
 		ArrayList<Card> com = new ArrayList<Card>();
 		for(int i=0;i<array.length;i++){
