@@ -1,8 +1,15 @@
 package poker;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.io.Serializable;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.*;
@@ -29,7 +36,74 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 
-class Player{
+class BarebonePlayer implements Serializable{
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	public Op action;
+	public String ip;
+	public String name;
+
+	
+	
+	@Override
+	public String toString() {
+		return "BarebonePlayer [action=" + action + ", ip=" + ip + ", name=" + name + "]";
+	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + ((ip == null) ? 0 : ip.hashCode());
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		BarebonePlayer other = (BarebonePlayer) obj;
+		if (ip == null) {
+			if (other.ip != null)
+				return false;
+		} else if (!ip.equals(other.ip))
+			return false;
+		return true;
+	}
+
+	public BarebonePlayer(Op action, String ip, String name) {
+		this.action = action;
+		this.ip= ip;
+		this.name = name;
+	}
+
+	public void setReady(boolean b) {
+		this.action= Op.Ready;
+		
+	}
+	
+	boolean isReady(){
+		return this.action.op==Op.Ready.op;
+	}
+	
+}
+
+class Player extends BarebonePlayer {
+	
+	
+	
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+
+
 	@Override
 	public String toString() {
 		return "Player [flop=" + flop + ", ip=" + ip + ", num=" + num + ", cards=" + Arrays.toString(cards)
@@ -67,7 +141,10 @@ class Player{
 	
 
 	public ArrayList<Integer> flop = new ArrayList<>(5);
+	
+	public Op action;
 	public String ip;
+	public String name;
 	public int num;
 	int[] cards=new int[2];
 	int counter=0;
@@ -75,8 +152,9 @@ class Player{
 	
 
 	public Player(String ip, int num) {
-		this.ip = ip;
-		// TODO Auto-generated constructor stub
+		super(Op.None,ip, String.valueOf(num));
+//			this.ip = ip;
+//		// TODO Auto-generated constructor stub
 		this.num = num;
 	}
 
@@ -90,14 +168,7 @@ class Player{
 		
 	}
 
-	public void setReady(boolean b) {
-		this.ready= b;
-		
-	}
-	
-	boolean isReady(){
-		return this.ready;
-	}
+
 	
 }
 
@@ -105,7 +176,7 @@ enum Op{
 	Ready(0),
 	Check(1),
 	Pass(2),
-	Raise(3);
+	Raise(3), None(-1), Call(4);
 	int op;
 	
 	Op(int op){
@@ -117,12 +188,130 @@ enum Op{
 public class Main extends Application{
 	
 		
+	private final class Client implements Runnable {
+		
+				
+		private SocketChannel client;
+		public Client(SocketChannel client) {
+			this.client = client;
+		}
+
+		PokerTable tbl = new PokerTable();
+		Player player1 = null;
+		@Override
+		public void run() {
+
+			Thread curT = Thread.currentThread();
+			try {
+//						ByteBuffer buffer = ByteBuffer.allocate(72);
+//						WritableByteChannel out = Channels.newChannel(System.out);
+//						int me = -1;
+				
+				ObjectInputStream ois = new ObjectInputStream(Channels.newInputStream(client));
+				while(true){
+					try {
+						Object readObject = ois.readObject();
+						
+						if(readObject instanceof PokerTable){
+							PokerTable ptbl = (PokerTable) readObject;
+							System.out.println(ptbl.bp);
+							if(ptbl.flop.equals(tbl.flop)){
+								Platform.runLater(() -> {
+									ptbl.flop.stream().forEach(i->drawFlop(img, gc, i));
+									primaryStage.show();
+								});
+								tbl.flop.clear();
+								tbl.flop.addAll(ptbl.flop);
+							}
+							
+							
+						}
+						if(readObject instanceof Player){
+							Player player2 = (Player) readObject;
+							System.out.println(player2);
+							if(player1==null||!player1.equals(player2)){
+								Platform.runLater(() -> {
+									Arrays.stream(player2.cards).forEach(i -> drawCards(img, gc, i, 0));
+									primaryStage.show();
+								});
+								player1=player2;
+								
+							}
+							
+						}
+						
+					} catch (ClassNotFoundException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					catch(EOFException e){
+//						e.printStackTrace();
+					}
+				}
+				/*
+				while (client.read(buffer) != -1) {
+					
+					
+					System.out.println("Buffer position: " + buffer.position());
+
+					buffer.flip();
+					if (me == -1) {
+						// String string = new String(buffer.array());
+						// System.out.println(string);
+						// me=Integer.valueOf(string.substring(string.lastIndexOf("
+						// ")+1).trim());
+
+						me = buffer.getInt();
+						System.out.println("I am number " + me);
+						// System.out.println("Next int " +
+						// buffer.getInt());
+					}
+
+					if (buffer.remaining() == 8) {
+						Platform.runLater(()->{
+							drawCards(img, gc, buffer.getInt(), 0);
+							drawCards(img, gc, buffer.getInt(), 0);
+							buffer.clear();
+							primaryStage.show();});
+						// counter++;
+						
+						
+//								break;
+					}
+
+					if (buffer.remaining() == 12) {
+						counter = 0;
+						Platform.runLater(() -> {
+							drawFlop(img, gc, buffer.getInt());
+							drawFlop(img, gc, buffer.getInt());
+							drawFlop(img, gc, buffer.getInt());
+							buffer.clear();
+							primaryStage.show();
+						});
+					}
+					
+					out.write(buffer);
+					buffer.clear();
+
+				}*/
+			} catch (IOException e) {
+				if(curT.isInterrupted())
+					return;
+				e.printStackTrace();
+				
+			}
+			
+
+		}
+	}
+
+
 	private final class CheckEvent implements EventHandler<ActionEvent> {
 		
-private SocketChannel client;
+private Client client;
 private Op op;
 
-public CheckEvent(SocketChannel client, Op op) {
+public CheckEvent(Client client, Op op) {
 	this.client = client;
 	this.op = op;
 	
@@ -133,15 +322,29 @@ public CheckEvent(SocketChannel client, Op op) {
 //		}
 		@Override
 		public void handle(ActionEvent event) {
-			ByteBuffer buffer = ByteBuffer.allocate(72);
-			buffer.putInt(op.op);
-			buffer.flip();
+			
+			client.player1.action = op;
+			
+			ByteArrayOutputStream bout = new ByteArrayOutputStream();
+			ObjectOutputStream nos;
 			try {
-				client.write(buffer);
-			} catch (IOException e) {
+				nos = new ObjectOutputStream(bout);
+				nos.writeObject(client.player1);
+				byte[] byteArray = bout.toByteArray();
+				ByteBuffer buffer = ByteBuffer.wrap(byteArray);
+				ByteBuffer size = ByteBuffer.allocate(4+byteArray.length);
+				size.putInt(byteArray.length);
+				size.put(byteArray);
+				size.flip();
+				System.out.println("Sending size " + byteArray.length+"; array"+Arrays.toString(byteArray));
+				client.client.write(size);
+//				buffer.flip();
+//				client.client.write(buffer);
+			} catch (IOException e1) {
 				// TODO Auto-generated catch block
-				e.printStackTrace();
+				e1.printStackTrace();
 			}
+			
 			
 			
 		}
@@ -201,14 +404,23 @@ public CheckEvent(SocketChannel client, Op op) {
 	private static ArrayList<Integer> flop= new ArrayList<>(5);
 	private static int[] cardsIdxs = new int[52];
 	private static List<Player> players;
-	private static volatile int cardHead;;
+	private static volatile int cardHead;
+	private Thread clientThread;
+	private Thread serverThread;;
 
 	private static void swap(int[] array, int i, int j) {
         int temp = array[i];
         array[i] = array[j];
         array[j] = temp;
     }
-	
+	@Override
+	public void stop() throws Exception {
+		// TODO Auto-generated method stub
+		super.stop();
+		if(serverThread!=null)
+			serverThread.interrupt();
+		clientThread.interrupt();
+	}
 	
 	@Override
 	public void start(Stage stage) throws Exception {
@@ -251,10 +463,11 @@ public CheckEvent(SocketChannel client, Op op) {
 		Button ready = new Button("Ready");
 		Button call = new Button("Call");
 		Button raise = new Button("Raise");
+		Button pass = new Button("Pass");
 		VBox vbox = new VBox();
 	    vbox.setPadding(new Insets(10));
 	    vbox.setSpacing(8);
-	    vbox.getChildren().addAll(check, call, raise, ready);
+	    vbox.getChildren().addAll(check, call, raise, ready, pass);
 		pane.getChildren().add(cnvs);
 		pane.getChildren().addAll(vbox);
 		
@@ -280,8 +493,8 @@ public CheckEvent(SocketChannel client, Op op) {
 
 			};
 
-			Thread thread = new Thread(r, "Poker Server");
-			thread.start();
+			serverThread = new Thread(r, "Poker Server");
+			serverThread.start();
 
 
 		}
@@ -293,73 +506,24 @@ public CheckEvent(SocketChannel client, Op op) {
 			SocketAddress address = new InetSocketAddress("127.0.0.1", 777);
 			SocketChannel client = SocketChannel.open(address);
 
-			ready.setOnAction(new CheckEvent(client, Op.Ready));
-			check.setOnAction(new CheckEvent(client, Op.Check));
-			raise.setOnAction(new CheckEvent(client, Op.Raise));
-			call.setOnAction(new CheckEvent(client, Op.Check));
+			
 
-			Runnable cli = new Runnable() {
+			Client cli = new Client(client);
 
-				@Override
-				public void run() {
+			ready.setOnAction(new CheckEvent(cli, Op.Ready));
+			check.setOnAction(new CheckEvent(cli, Op.Check));
+			raise.setOnAction(new CheckEvent(cli, Op.Raise));
+			call.setOnAction(new CheckEvent(cli, Op.Call));
+			pass.setOnAction(new CheckEvent(cli, Op.Pass));
+			
+			
+			clientThread = new Thread(cli, "Client Thread");
 
-					try {
-						ByteBuffer buffer = ByteBuffer.allocate(72);
-						WritableByteChannel out = Channels.newChannel(System.out);
-						int me = -1;
-						while (client.read(buffer) != -1) {
-							System.out.println("Buffer position: " + buffer.position());
-
-							buffer.flip();
-							if (me == -1) {
-								// String string = new String(buffer.array());
-								// System.out.println(string);
-								// me=Integer.valueOf(string.substring(string.lastIndexOf("
-								// ")+1).trim());
-
-								me = buffer.getInt();
-								System.out.println("I am number " + me);
-								// System.out.println("Next int " +
-								// buffer.getInt());
-							}
-
-							if (buffer.remaining() == 8) {
-								Platform.runLater(()->{
-									drawCards(img, gc, buffer.getInt(), 0);
-									drawCards(img, gc, buffer.getInt(), 0);
-									primaryStage.show();});
-								// counter++;
-								
-//								break;
-							}
-
-							if (buffer.remaining() == 20) {
-								counter = 0;
-								Platform.runLater(() -> {
-									drawFlop(img, gc, buffer.getInt());
-									drawFlop(img, gc, buffer.getInt());
-									drawFlop(img, gc, buffer.getInt());
-									primaryStage.show();
-								});
-							}
-							
-							out.write(buffer);
-							buffer.clear();
-
-						}
-					} catch (IOException e) {
-						e.printStackTrace();
-					}
-
-				}
-			};
-
-			Thread cliT = new Thread(cli, "Client Thread");
-
-			cliT.start();
+			clientThread.start();
 
 
 		} catch (IOException ex) {
+
 			ex.printStackTrace();
 		}
 			
@@ -409,6 +573,8 @@ public CheckEvent(SocketChannel client, Op op) {
 	static void createServer(){
 		ServerSocketChannel serverChannel;
 		Selector selector;
+		PokerTable tbl = new PokerTable();
+		
 		try {
 			serverChannel = ServerSocketChannel.open();
 			InetSocketAddress address = new InetSocketAddress(777);
@@ -422,7 +588,7 @@ public CheckEvent(SocketChannel client, Op op) {
 		}
 		cardHead = 0;
 		
-		
+		Thread curT = Thread.currentThread();
 		Integer playerNum=0;
 		boolean done= true;
 		while(done){
@@ -432,6 +598,8 @@ public CheckEvent(SocketChannel client, Op op) {
 			try {
 				selector.select();
 			} catch (IOException ex) {
+				if(curT.isInterrupted())
+					return;
 				ex.printStackTrace();
 				break;
 			}
@@ -446,7 +614,7 @@ public CheckEvent(SocketChannel client, Op op) {
 				
 				SelectionKey key = iterator.next();
 				
-				System.out.println("Key Readable: "+key.isReadable()+" Key Writable: "+key.isWritable() +" Key "+ key.attachment());
+//				System.out.println("Key Readable: "+key.isReadable()+" Key Writable: "+key.isWritable() +" Key "+ key.attachment());
 				
 				iterator.remove();
 				try {
@@ -473,11 +641,28 @@ public CheckEvent(SocketChannel client, Op op) {
 						
 					} else if (key.isWritable()){//&& ((Player)key.attachment()).counter==0) {
 						SocketChannel client = (SocketChannel) key.channel();
-						ByteBuffer buffer = ByteBuffer.allocate(72);
-						
 						Player e = (Player)key.attachment();
+						BarebonePlayer bbp = new BarebonePlayer(e.action, e.ip, e.name);
+						if(!tbl.bp.contains(bbp)){
+							tbl.bp.add(bbp);
+						}
 						
-						if(e!=null&& !players.contains(e)){
+						ByteArrayOutputStream bout = new ByteArrayOutputStream();
+						ObjectOutputStream nos= new ObjectOutputStream(bout);
+						nos.writeObject(tbl);
+						nos.writeObject(e);
+						
+						
+						
+						ByteBuffer buffer = ByteBuffer.wrap(bout.toByteArray());//allocate(72);
+						
+						System.out.println("Pos: " + buffer.position() + " Rem: " + buffer.remaining());
+						
+						client.write(buffer);
+						client.register(selector, SelectionKey.OP_READ).attach(e);
+						buffer.clear();
+						
+						/*if(e!=null&& !players.contains(e)){
 							System.out.println("Draw cards to " + e);
 							e.giveCards(cardsIdxs[cardHead++]);
 							e.giveCards(cardsIdxs[cardHead++]);
@@ -493,29 +678,36 @@ public CheckEvent(SocketChannel client, Op op) {
 							client.write(buffer);
 							
 							client.register(selector, SelectionKey.OP_READ).attach(e);
-						}
+						}*/
 						
 						System.out.println("Is Players Ready: "+players.stream().allMatch(i ->{ System.out.println(i);return i.isReady();}));
 						System.out.println("Is flop drawn: "+e.flop);
 						
-						if(players.stream().allMatch(i->i.isReady())&& e.flop.size()!=flop.size()){
+						/*if(players.stream().allMatch(i->i.isReady())&& e.flop.size()!=flop.size()){
 							buffer.clear();
 							flop.stream().forEach(i->{buffer.putInt(i.intValue()); System.out.println("Flop to "+e+" now drawing: "+i.intValue());});
 							
-							WritableByteChannel out = Channels.newChannel(System.out);
-							buffer.flip();
-							out.write(buffer);
+//							WritableByteChannel out = Channels.newChannel(System.out);
 							
 							buffer.flip();
+//							out.write(buffer);
+							System.out.println("Server buffer remaining:"+buffer.remaining());
+//							buffer.flip();
 							
 							
 							client.write(buffer);
 							
-							players.remove(e);
+							ObjectOutputStream nos= new ObjectOutputStream(Channels.newOutputStream(client));
+							nos.writeObject(tbl);
+							
+
+							
+							System.out.println(players.remove(e));;
+							System.out.println(e);
 							players.add(e);
 							
 							client.register(selector, SelectionKey.OP_READ).attach(e);
-						}
+						}*/
 						
 						
 						
@@ -524,10 +716,56 @@ public CheckEvent(SocketChannel client, Op op) {
 					}
 					if(key.isReadable()){
 						SocketChannel client = (SocketChannel) key.channel();
-						ByteBuffer buffer = ByteBuffer.allocate(72);
+						
+						ByteBuffer buffer = ByteBuffer.allocate(4);
+						
 						
 						
 						if(client.read(buffer)!=-1){
+							buffer.flip();
+							int size = buffer.getInt();
+							System.out.println("Recieved size of "+size+" rem: "+buffer.remaining());
+							buffer = ByteBuffer.allocate(size);
+							int read = client.read(buffer);
+							if(read==size){
+							
+								System.out.println(buffer.remaining() +"remaining; has array "+Arrays.toString(buffer.array()));
+								
+//								buffer.flip();
+								
+//								System.out.println(buffer.remaining() +"remaining; has array "+buffer.array());
+								ObjectInputStream ois = new ObjectInputStream(new ByteArrayInputStream(buffer.array()));
+								Object readObject = ois.readObject();
+								
+								System.out.println(readObject.getClass());
+								
+								if(readObject instanceof Player){
+									System.out.println("Server recieved " + (Player) readObject);
+//									client.register(selector, SelectionKey.OP_WRITE).attach((Player) readObject);
+								}
+
+								
+							}
+							else{
+								System.err.println("Readed "+read+" instead of "+size);
+							}
+							
+						}
+						
+//						if(client.read(buffer)!=-1){
+//							bout.write(buffer.array());
+//							buffer.clear();
+//							while(client.read(buffer)!=-1){
+//								bout.write(buffer.array());
+//							}
+//							
+//							
+//														
+//							
+//						}
+						
+						
+						/*if(client.read(buffer)!=-1){
 							buffer.flip();
 							System.out.println("Client sent buffer with remaining "+buffer.remaining());
 							
@@ -558,15 +796,22 @@ public CheckEvent(SocketChannel client, Op op) {
 								client.register(selector, SelectionKey.OP_WRITE).attach(e);
 								
 							}
-						}
+						}*/
 						
 					}
 				} catch (IOException ex) {
+					ex.printStackTrace();
+					if(curT.isInterrupted()){
+						return;
+					}
 					key.cancel();
 					try {
 						key.channel().close();
 					}
 					catch (IOException cex) {}
+				} catch (ClassNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
 				}
 			}
 
